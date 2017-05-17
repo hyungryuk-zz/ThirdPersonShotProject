@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.UI;
 
 public class Weapon : NetworkBehaviour {
 
@@ -14,6 +15,7 @@ public class Weapon : NetworkBehaviour {
         m4 = 1
     }
 
+    public Image weaponImage;
     public Vector3 rifleUnEquipedPos;
     public Vector3 rifleUnEquipedRot;
 
@@ -39,9 +41,24 @@ public class Weapon : NetworkBehaviour {
     public bool charged2;
     [SyncVar]
     public bool isAiming;
+    [SyncVar]
+    public bool isFired;
+
+    bool isOldFired;
+    public float damage;
+    public float range;
+
+    public float MaxAmmo;
+    public float CurrentAmmo;
+
+
+    AudioSource audio;
 
     // Use this for initialization
     void Start () {
+        audio = GetComponent<AudioSource>();
+        isFired = false;
+        isOldFired = isFired;
         charged1 = false;
         charged2 = false;
         isCurrent = false;
@@ -64,12 +81,12 @@ public class Weapon : NetworkBehaviour {
         rifleEquipedRot.x = 65.803f;
         rifleEquipedRot.y = 171.707f;
         rifleEquipedRot.z = -77.912f;
-        rifleAimedPos.x = 0.029f;
-        rifleAimedPos.y = 0.246f;
-        rifleAimedPos.z = 0.005f;
-        rifleAimedRot.x = 74.832f;
-        rifleAimedRot.y = -109.072f;
-        rifleAimedRot.z = -29.582f;
+        rifleAimedPos.x = -0.027f;
+        rifleAimedPos.y = 0.252f;
+        rifleAimedPos.z = 0.033f;
+        rifleAimedRot.x = 81.052f;
+        rifleAimedRot.y = -134.12f;
+        rifleAimedRot.z = -56.87f;
     }
 	
 	// Update is called once per frame
@@ -135,6 +152,12 @@ public class Weapon : NetworkBehaviour {
             GetComponent<BoxCollider>().enabled = false;
             transform.localPosition = rifleAimedPos;
             transform.localRotation = Quaternion.Euler(rifleAimedRot);
+        }
+        if(isOldFired != isFired)
+        {
+            CurrentAmmo--;
+            audio.Play();
+            isOldFired = isFired;
         }
     }
 }

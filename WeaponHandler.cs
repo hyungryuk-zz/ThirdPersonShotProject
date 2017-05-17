@@ -1,18 +1,22 @@
 ﻿using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Networking;
+using System.Collections;
 
 public class WeaponHandler : NetworkBehaviour
 {
 
-    Camera cam;
+    public Camera cam;
     RaycastHit hit;
     public float availableDistanceTogetWeapon;
     public Transform spine;
     public Transform rightHand;
-
     public Vector3 spineRot;
 
-    public GameObject currWeapon;
+    public Text weaponName;
+    public Text ammo;
+
+    public Transform currWeapon;
 
     [SyncVar]
     public NetworkInstanceId rifle1;
@@ -32,15 +36,22 @@ public class WeaponHandler : NetworkBehaviour
     [SyncVar]
     public bool toolCheck;
 
+    public Weapon currentWeapon;
+    public GameObject Flare;
+
+    [SerializeField]
+    private LayerMask mask;
+    
     Animator ani;
 
     public int currWeaponNum;
 
-    public Transform m4;
     int lm;
     // Use this for initialization
     void Start()
     {
+        weaponName = GameObject.FindGameObjectWithTag("HealthBar").transform.GetChild(2).GetComponent<Text>();
+        ammo = GameObject.FindGameObjectWithTag("HealthBar").transform.GetChild(1).GetComponent<Text>();
         currWeaponNum = 0;
         if (!isLocalPlayer) enabled = false; ;
         spineRot.x = -4.3f;
@@ -50,12 +61,19 @@ public class WeaponHandler : NetworkBehaviour
         rifle2Check = false;
         pistolCheck = false;
         toolCheck = false;
-
+        if (isLocalPlayer)
+        {
+            gameObject.layer = LayerMask.NameToLayer("LocalPlayer");
+        }
+        else
+        {
+            gameObject.layer = LayerMask.NameToLayer("RemotePlayer");
+        }
         ani = GetComponent<Animator>();
 
         cam = GameObject.FindGameObjectWithTag("Camera").GetComponentInChildren<Camera>();
         lm = 1 << LayerMask.NameToLayer("CrossHair");
-        lm = 1 << LayerMask.NameToLayer("Player");
+        lm = 1 << LayerMask.NameToLayer("LocalPlayer");
         lm = ~lm;
 
     }
@@ -79,11 +97,21 @@ public class WeaponHandler : NetworkBehaviour
             }
 
         }
+        if(currentWeapon != null)
+        {
+            ammo.text = currentWeapon.CurrentAmmo + " / " + currentWeapon.MaxAmmo;
+        }
         if (Input.GetButtonDown("1") && rifle1Check)
         {
             CmdChangeCurrentWeapon(rifle1);
             ani.SetInteger("WeaponType", 1);
             currWeaponNum = 1;
+            currentWeapon = spine.GetChild(1).GetComponent<Weapon>();
+            Debug.Log(currentWeapon.damage);
+            weaponName.text = currentWeapon.name.ToString();
+            ammo.text = currentWeapon.CurrentAmmo + " / " + currentWeapon.MaxAmmo;
+            GameObject.FindGameObjectWithTag("HealthBar").transform.GetChild((int)currentWeapon.name+5).GetComponent<Image>().enabled = true;
+
         }
         if (Input.GetButton("aim"))
         {
@@ -100,21 +128,81 @@ public class WeaponHandler : NetworkBehaviour
             switch (currWeaponNum)
             {
                 case 1:
-                    ani.SetBool("isAiming", true);
+                    ani.SetBool("isAiming", false);
                     CmdIsAimingFinish(rifle1);
                     break;
             }
         }
+        if (Input.GetButtonDown("Fire1"))
+        {
+            Shoot();
+        }
 
     }
-    private void LateUpdate()
-    {
-        if (Input.GetButton("aim"))
-        {
-            spine.localRotation = Quaternion.Euler(spineRot);
-        }
-    }
     
+    void Shoot()
+    {
+        if (currentWeapon.CurrentAmmo <= 0)
+        {
+            return;
+        }
+        Debug.Log("Shoot");
+        RaycastHit BulletHit;
+        if (currentWeapon != null)
+        {
+            if (isLocalPlayer)
+            {
+                CmdShootSound(currentWeapon.GetComponent<NetworkIdentity>().netId);
+            }
+
+            if (Physics.Raycast(cam.transform.position, cam.transform.forward, out BulletHit, currentWeapon.range,mask))
+            {
+                Debug.Log(BulletHit.transform.tag);
+                if(BulletHit.transform.gameObject.layer == LayerMask.NameToLayer("RemotePlayer"))
+                {
+                    Debug.Log("ShootRemotePlayer");
+                    CmdHitPlayer(BulletHit.transform.GetComponent<NetworkIdentity>().netId, currentWeapon.damage);
+                }
+                else
+                {                   
+                    CmdFlare(BulletHit.point, BulletHit.transform.up);
+                }
+            }
+        }   
+
+    }
+    [Command]
+    void CmdFlare(Vector3 pos, Vector3 rot)
+    {
+        GameObject flare = (GameObject)Instantiate(Flare, pos, Quaternion.Euler(rot));
+        NetworkServer.Spawn(flare);
+        StartCoroutine(FlareEffectTime(flare.GetComponent<NetworkIdentity>().netId));
+    }
+    IEnumerator FlareEffectTime(NetworkInstanceId flareId)
+    {
+        yield return new WaitForSeconds(0.2f);
+        CmdFlareDelete(flareId);
+
+    }    
+    [Command]
+    void CmdFlareDelete(NetworkInstanceId flareId)
+    {
+        GameObject targetEffect = NetworkServer.FindLocalObject(flareId);
+        Destroy(targetEffect);
+    }
+
+    [Command]
+    void CmdShootSound(NetworkInstanceId weaponNetId)
+    {
+        GameObject targetWeapon = NetworkServer.FindLocalObject(weaponNetId);
+        targetWeapon.GetComponent<Weapon>().isFired = !targetWeapon.GetComponent<Weapon>().isFired;
+    }
+    [Command]
+    void CmdHitPlayer(NetworkInstanceId weaponNetId,float damage)
+    {
+        GameObject target = NetworkServer.FindLocalObject(weaponNetId);
+        target.GetComponent<HealthController>().damage += damage;
+    }
 
     [Command]
     void CmdIsAimingFinish(NetworkInstanceId weaponNetId)
@@ -164,7 +252,6 @@ public class WeaponHandler : NetworkBehaviour
                 break;
         }
         targetWeapon.GetComponent<NetworkIdentity>().AssignClientAuthority(connectionToClient);
-
 
 
     }
